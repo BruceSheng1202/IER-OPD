@@ -2,7 +2,6 @@ import abc
 import copy
 import logging
 import os
-from pathlib import Path
 
 import torch
 
@@ -61,12 +60,6 @@ class RolloutDataSource(DataSource):
         if args.rollout_global_dataset and args.prompt_data is not None:
             tokenizer = load_tokenizer(args.hf_checkpoint, trust_remote_code=True)
             processor = load_processor(args.hf_checkpoint, trust_remote_code=True)
-
-            # TODO move (during the refactor)
-            if (d := args.dump_details) is not None:
-                tokenizer.save_pretrained(Path(d) / "tokenizer")
-                if processor:
-                    processor.save_pretrained(Path(d) / "processor")
 
             self.dataset = Dataset(
                 args.prompt_data,

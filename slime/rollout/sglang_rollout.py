@@ -9,7 +9,6 @@ from contextlib import contextmanager
 from typing import Any
 
 import numpy as np
-import pybase64
 import sglang_router
 from packaging.version import parse
 from tqdm import tqdm
@@ -27,7 +26,6 @@ from slime.utils.processing_utils import (
     load_processor,
     load_tokenizer,
 )
-from slime.utils.trace_utils import build_sglang_meta_trace_attrs, trace_function, trace_span
 from slime.utils.types import Sample
 
 from .rm_hub import async_rm, batched_async_rm
@@ -152,9 +150,6 @@ class GenerateState(metaclass=SingletonMeta):
 
 async def generate(args: Namespace, sample: Sample, sampling_params: dict[str, Any]) -> Sample:
     """Generate using traditional SGLang router with token-based workflow"""
-    if args.ci_test:
-        assert isinstance(sample.prompt, str)
-
     state = GenerateState(args)
     url = f"http://{args.sglang_router_ip}:{args.sglang_router_port}/generate"
 
@@ -178,9 +173,6 @@ async def generate(args: Namespace, sample: Sample, sampling_params: dict[str, A
     }
     maybe_add_topk_request(args, payload)
 
-    if args.use_rollout_routing_replay:
-        payload["return_routed_experts"] = True
-
     images = sample.multimodal_inputs.get("images") if sample.multimodal_inputs else None
     if images:
         payload["image_data"] = [encode_image_for_rollout_engine(image) for image in images]
@@ -199,9 +191,7 @@ async def generate(args: Namespace, sample: Sample, sampling_params: dict[str, A
         if getattr(args, "router_policy", None) == "consistent_hashing":
             headers = {"X-SMG-Routing-Key": sample.session_id}
 
-    with trace_span(sample, "sglang_generate", attrs={"max_new_tokens": sampling_params["max_new_tokens"]}) as span:
-        output = await post(url, payload, headers=headers)
-        span.update(build_sglang_meta_trace_attrs(output["meta_info"]))
+    output = await post(url, payload, headers=headers)
 
     if "output_token_logprobs" in output["meta_info"]:
         new_response_tokens = [item[1] for item in output["meta_info"]["output_token_logprobs"]]
@@ -240,22 +230,11 @@ async def generate(args: Namespace, sample: Sample, sampling_params: dict[str, A
         sample.rollout_log_probs = []
     sample.rollout_log_probs += new_response_log_probs
 
-    if "routed_experts" in output["meta_info"]:
-        sample.rollout_routed_experts = np.frombuffer(
-            pybase64.b64decode(output["meta_info"]["routed_experts"].encode("ascii")),
-            dtype=np.int32,
-        ).reshape(
-            len(sample.tokens) - 1,
-            args.num_layers,
-            args.moe_router_topk,
-        )
-
     sample.update_from_meta_info(args, output["meta_info"])
 
     return sample
 
 
-@trace_function("generate_and_rm", target="sample")
 async def generate_and_rm(
     args: Namespace,
     sample: Sample | list[Sample],
@@ -305,8 +284,7 @@ async def generate_and_rm(
             return samples
 
         samples_need_reward = [sample for sample in samples if sample.reward is None]
-        with trace_span(samples_need_reward, "reward_model"):
-            rewards = await batched_async_rm(args, samples_need_reward)
+        rewards = await batched_async_rm(args, samples_need_reward)
         for sample, reward in zip(samples_need_reward, rewards, strict=False):
             sample.reward = reward
         return samples
@@ -315,17 +293,11 @@ async def generate_and_rm(
             return sample
         # Some custom generate paths may have already filled the reward.
         if sample.reward is None:
-            with trace_span(sample, "reward_model"):
-                sample.reward = await async_rm(args, sample)
+            sample.reward = await async_rm(args, sample)
 
     return sample
 
 
-@trace_function(
-    "generate_and_rm_group",
-    target="group",
-    attrs_getter=lambda args, group, sampling_params, evaluation=False: {"group_size": len(group)},
-)
 async def generate_and_rm_group(
     args: Namespace, group: list[Sample], sampling_params: dict[str, Any], evaluation: bool = False
 ) -> list[Sample]:
@@ -353,8 +325,7 @@ async def generate_and_rm_group(
 
     # for the rm that need the whole group, we will do the rm here
     if not state.aborted and args.group_rm:
-        with trace_span(group, "group_reward_model"):
-            rewards = await batched_async_rm(args, group)
+        rewards = await batched_async_rm(args, group)
         for sample, reward in zip(group, rewards, strict=False):
             sample.reward = reward
 

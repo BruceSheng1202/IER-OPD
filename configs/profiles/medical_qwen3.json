@@ -1,9 +1,5 @@
 {
   "name": "medical_qwen3",
-  "paper_pages": [
-    5,
-    17
-  ],
   "task": "medical",
   "teacher": "ClinAlign-4B",
   "student": "Qwen3-4B",

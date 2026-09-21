@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 def _validate_allgather_cp_supported(args, hf_config=None):
     if getattr(args, "allgather_cp", False) and getattr(args, "context_parallel_size", 1) > 1:
-        raise ValueError("The paper's Qwen2/Qwen3 models use the default context-parallel layout; disable --allgather-cp.")
+        raise ValueError("Qwen2/Qwen3 models require the default context-parallel layout; disable --allgather-cp.")
 
 
 def _has_dense_moe_layers(args):

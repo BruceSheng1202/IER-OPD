@@ -364,9 +364,6 @@ class SGLangEngine(RayActor):
             {"tags": tags},
         )
 
-    def check_weights(self, action: str):
-        return self._make_request("weights_checker", {"action": action})
-
     def update_weights_from_disk(self, model_path: str, load_format: str | None = None):
         """Reload weights from *model_path* without restarting the engine.
 
@@ -449,51 +446,6 @@ class SGLangEngine(RayActor):
             },
         )
 
-    def start_profile(
-        self,
-        # The output directory
-        output_dir: str | None = None,
-        # If set, it profile as many as this number of steps.
-        # If it is set, profiling is automatically stopped after this step, and
-        # the caller doesn't need to run stop_profile.
-        start_step: int | None = None,
-        num_steps: int | None = None,
-        activities: list[str] | None = None,
-        profile_by_stage: bool = False,
-        with_stack: bool | None = None,
-        record_shapes: bool | None = None,
-    ):
-        response = requests.post(
-            f"http://{self.server_host}:{self.server_port}/start_profile",
-            json={
-                "output_dir": output_dir,
-                "start_step": start_step,
-                "num_steps": num_steps,
-                "activities": activities,
-                "profile_by_stage": profile_by_stage,
-                "with_stack": with_stack,
-                "record_shapes": record_shapes,
-            },
-        )
-        response.raise_for_status()
-        return response
-
-    def stop_profile(self):
-        response = requests.post(f"http://{self.server_host}:{self.server_port}/stop_profile", json={})
-        response.raise_for_status()
-        return response
-
-    def simulate_crash(self):
-        if self.args.rollout_external or not getattr(self, "process", None):
-            logger.info(
-                "simulate_crash called but no local engine process exists (rollout_external=%s); skip kill",
-                self.args.rollout_external,
-            )
-            return
-
-        logger.info(f"Simulating crash on engine {self.server_host}:{self.server_port}...")
-        self.shutdown()
-
 
 def _compute_server_args(
     args,
@@ -555,8 +507,6 @@ def _compute_server_args(
     elif worker_type == "encoder":
         kwargs["encoder_only"] = True
 
-    if args.use_rollout_routing_replay:
-        kwargs["enable_return_routed_experts"] = True
     if args.fp16:
         kwargs["dtype"] = "float16"
     external_engine_need_check_fields = [k for k in kwargs.keys() if k not in _EXTERNAL_ENGINE_SKIP_CHECK_FIELDS]

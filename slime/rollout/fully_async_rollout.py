@@ -124,9 +124,8 @@ class AsyncRolloutWorker:
 
     def worker_thread_func(self):
         """Worker function running in independent thread"""
-        # The previous run aborted inside uvloop/libuv uv__epoll_ctl_prep.
-        # Scope the workaround to this worker; retain the same async algorithm,
-        # concurrency, sampling parameters and weight-update hooks.
+        # Use a thread-local selector event loop to avoid sharing libuv state
+        # with Ray's other event loops.
         with asyncio.Runner(loop_factory=asyncio.SelectorEventLoop) as runner:
             print(f"ASYNC_WORKER_LOOP={type(runner.get_loop()).__module__}.{type(runner.get_loop()).__name__}", flush=True)
             runner.run(self.continuous_worker_loop())
@@ -297,9 +296,7 @@ def generate_rollout_fully_async(args, rollout_id, data_buffer, evaluation=False
     return completed_samples
 
 
-# Bypass Ray's stdout routing (which may drop/buffer plain print): log every
-# drain/resume event to a dedicated file with flush so we can confirm the hook
-# actually fires and which branch it takes.
+# Persist drain/resume events because Ray can buffer or suppress worker stdout.
 _DRAIN_LOG_PATH = os.environ.get(
     "ASYNC_DRAIN_LOG", os.path.join(os.environ.get("OUTPUT_ROOT", "outputs"), "logs", "async_drain.log")
 )

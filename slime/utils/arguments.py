@@ -133,7 +133,7 @@ def get_slime_extra_args_provider(add_custom_arguments=None):
             )
             parser.add_argument(
                 "--megatron-to-hf-mode",
-                choices=["raw", "bridge"],
+                choices=["raw"],
                 default="raw",
                 help="The method to convert megatron weights to hugging face weights for SGLang.",
             )
@@ -162,7 +162,7 @@ def get_slime_extra_args_provider(add_custom_arguments=None):
                 type=str,
                 nargs="*",
                 default=None,
-                help="""List of regex patterns of parameter names to TRAIN. All other parameters will be FROZEN. 
+                help=r"""List of regex patterns of parameter names to TRAIN. All other parameters will be FROZEN.
                         Supports Python regex syntax (re.search).
 
                         Examples:
@@ -738,15 +738,6 @@ def get_slime_extra_args_provider(add_custom_arguments=None):
                     "This reduces checkpoint size but disables training resumption from the saved checkpoint."
                 ),
             )
-            parser.add_argument(
-                "--save-hf",
-                type=str,
-                default=None,
-                help=(
-                    "Path to save the model in HuggingFace format when using Megatron backend. "
-                    "The model will be saved to `save_hf.format(rollout_id)`. "
-                ),
-            )
             reset_arg(parser, "--seed", type=int, default=1234)
             reset_arg(parser, "--clip-grad", type=float, default=1.0)
             reset_arg(parser, "--calculate-per-token-loss", action="store_true")
@@ -942,27 +933,15 @@ def get_slime_extra_args_provider(add_custom_arguments=None):
                 "--custom-tis-function-path",
                 type=str,
                 default=None,
-                help="Path to the custom TIS/RS function (e.g., examples/train_infer_mismatch_helper/mis.py:compute_mis_weights_with_cp).",
+                help="Path to a custom TIS/RS function.",
             )
             parser.add_argument(
                 "--custom-pg-loss-reducer-function-path",
                 type=str,
                 default=None,
-                help="Path to a custom reducer function for pg_loss only. When set, pg_loss will use this custom reducer while other metrics (pg_clipfrac, ppo_kl, entropy_loss, etc.) still use the default sum_of_sample_mean. (e.g., examples/Dr.GRPO/custom_reducer.py:get_pg_loss_reducer).",
+                help="Path to a custom reducer function for pg_loss only. When set, pg_loss will use this custom reducer while other metrics (pg_clipfrac, ppo_kl, entropy_loss, etc.) still use the default sum_of_sample_mean.",
             )
 
-            parser.add_argument(
-                "--use-routing-replay",
-                action="store_true",
-                default=False,
-                help="The routing replay technique from https://arxiv.org/abs/2507.18071",
-            )
-            parser.add_argument(
-                "--use-rollout-routing-replay",
-                action="store_true",
-                default=False,
-                help="The rollout routing replay technique from https://arxiv.org/abs/2510.11370",
-            )
             parser.add_argument(
                 "--use-opsm",
                 action="store_true",
@@ -1024,7 +1003,7 @@ def get_slime_extra_args_provider(add_custom_arguments=None):
                 default=16,
                 help=(
                     "When > 0, request SGLang top-k logprobs for student rollout and SGLang OPD teacher, "
-                    "then compute TIP/compatibility token-bank metrics on the returned top-k supports."
+                    "then compute token selection scores on the returned top-k supports."
                 ),
             )
             parser.add_argument(
@@ -1048,25 +1027,6 @@ def get_slime_extra_args_provider(add_custom_arguments=None):
                     "Applied before candidate-set renormalization for IER, IER-OR and IER-AND. "
                     "Observed top-k and sampled-token log-probabilities take precedence."
                 ),
-            )
-            parser.add_argument(
-                "--opd-token-bank-dir",
-                type=str,
-                default=None,
-                help="Directory for exported TIP/compatibility token-bank files. Disabled when unset.",
-            )
-            parser.add_argument(
-                "--opd-token-bank-format",
-                type=str,
-                choices=["csv", "jsonl"],
-                default="csv",
-                help="Token-bank export format.",
-            )
-            parser.add_argument(
-                "--opd-token-bank-raw-topk",
-                action="store_true",
-                default=False,
-                help="Also store raw top-k token ids/logprobs arrays in the token-bank export.",
             )
             parser.add_argument(
                 "--opd-exact-cmass",
@@ -1093,28 +1053,10 @@ def get_slime_extra_args_provider(add_custom_arguments=None):
                     "fallback disables exact Cmass for that sample; truncate scores the first max-union ids; error raises."
                 ),
             )
-            parser.add_argument(
-                "--opd-token-bank-pair-id",
-                type=str,
-                default="",
-                help="Pair id written to token-bank rows, e.g. qwen3_4b_to_qwen3_1p7b.",
-            )
-            parser.add_argument(
-                "--opd-teacher-name",
-                type=str,
-                default=None,
-                help="Teacher name/path written to token-bank rows.",
-            )
-            parser.add_argument(
-                "--opd-student-name",
-                type=str,
-                default=None,
-                help="Student name/path written to token-bank rows.",
-            )
             from slime.rollout.tip_compat import BUDGET_METHODS
             parser.add_argument(
                 "--opd-budget-mask", type=str, choices=BUDGET_METHODS, default="full",
-                help="Paper token selector; full uses every valid response token.",
+                help="Token selector; full uses every valid response token.",
             )
             parser.add_argument(
                 "--opd-budget-ratio",
@@ -1139,7 +1081,7 @@ def get_slime_extra_args_provider(add_custom_arguments=None):
                 type=str,
                 choices=["mass"],
                 default="mass",
-                help="Teacher probability mass on student top-k support, as used by the paper baselines.",
+                help="Teacher probability mass on student top-k support.",
             )
             parser.add_argument(
                 "--opd-metric-normalization",
@@ -1264,67 +1206,6 @@ def get_slime_extra_args_provider(add_custom_arguments=None):
             )
             parser.add_argument("--tb-experiment-name", type=str, default=None)
 
-            return parser
-
-        # debug
-        def add_debug_arguments(parser):
-            parser.add_argument(
-                "--save-debug-rollout-data",
-                type=str,
-                default=None,
-                help=(
-                    "Save the rollout data to this path for debugging. "
-                    "The file will be saved to `save_debug_rollout_data.format(rollout_id)`."
-                ),
-            )
-            # --load-debug-rollout-data, --debug-rollout-only, --debug-train-only
-            # are parsed early in _pre_parse_mode() and merged later.
-            parser.add_argument(
-                "--load-debug-rollout-data-subsample",
-                type=float,
-                default=None,
-                help="Subsample a portion of the debug rollout data for faster debugging.",
-            )
-            parser.add_argument(
-                "--save-debug-train-data",
-                type=str,
-                default=None,
-                help=(
-                    "Save the train data to this path for debugging. "
-                    "The file will be saved to `save_debug_train_data.format(rollout_id)`."
-                ),
-            )
-            parser.add_argument(
-                "--dump-details",
-                type=str,
-                default=None,
-                help=("Dump all details of training for post-hoc analysis and visualization."),
-            )
-            # use together with --record-memory-history and --memory-snapshot-path (defined in Megatron)
-            parser.add_argument(
-                "--memory-snapshot-dir",
-                type=str,
-                default=".",
-            )
-            parser.add_argument(
-                "--memory-snapshot-num-steps",
-                type=int,
-                default=None,
-            )
-            parser.add_argument(
-                "--profile-target",
-                type=str,
-                choices=["train_overall", "train_actor", "train_log_probs"],
-                default=["train_overall"],
-                nargs="+",
-            )
-            parser.add_argument(
-                "--memory-recorder",
-                type=str,
-                choices=["torch", "memray"],
-                default="torch",
-            )
-            parser.add_argument("--check-weight-update-equal", action="store_true")
             return parser
 
         def add_network_arguments(parser):
@@ -1502,27 +1383,6 @@ def get_slime_extra_args_provider(add_custom_arguments=None):
 
             return parser
 
-        def add_ci_arguments(parser):
-            parser.add_argument(
-                "--ci-test",
-                action="store_true",
-            )
-            parser.add_argument(
-                "--ci-disable-kl-checker",
-                action="store_true",
-            )
-            parser.add_argument(
-                "--ci-save-grad-norm",
-                type=str,
-                default=None,
-            )
-            parser.add_argument(
-                "--ci-load-grad-norm",
-                type=str,
-                default=None,
-            )
-            return parser
-
         # Add custom arguments in front to prevent overwritten some slime arguments.
         if add_custom_arguments is not None:
             parser = add_custom_arguments(parser)
@@ -1538,12 +1398,10 @@ def get_slime_extra_args_provider(add_custom_arguments=None):
         parser = add_wandb_arguments(parser)
         parser = add_tensorboard_arguments(parser)
         parser = add_router_arguments(parser)
-        parser = add_debug_arguments(parser)
         parser = add_network_arguments(parser)
         parser = add_reward_model_arguments(parser)
         parser = add_rollout_buffer_arguments(parser)
         parser = add_mtp_training_arguments(parser)
-        parser = add_ci_arguments(parser)
         parser = add_custom_megatron_plugins_arguments(parser)
         reset_arg(
             parser,
@@ -1813,35 +1671,21 @@ def slime_validate_args(args):
         # If OPD is not enabled, opd_teacher_load should not be set
         if args.opd_teacher_load is not None:
             raise ValueError("--opd-teacher-load is set but --use-opd is not enabled. Please add --use-opd flag.")
-        if args.opd_token_bank_dir is not None or args.opd_budget_mask != "full":
-            raise ValueError("OPD token-bank/top-k metrics require --use-opd --opd-type=sglang in this implementation.")
+        if args.opd_budget_mask != "full":
+            raise ValueError("Token selection requires --use-opd --opd-type=sglang.")
 
-    if args.megatron_to_hf_mode == "bridge":
-        if (
-            args.load is not None
-            and os.path.exists(args.load)
-            and os.path.exists(os.path.join(args.load, "latest_checkpointed_iteration.txt"))
-        ):
-            # If is a Megatron checkpoint, won't use bridge to load hf weight.
-            pass
-        else:
-            if args.load is None:
-                args.load = args.ref_load or args.hf_checkpoint
-            # If is a HF checkpoint, set start_rollout_id to 0 here.
-            args.start_rollout_id = 0
-    else:
-        if (
-            args.load is None
-            or not os.path.exists(args.load)
-            or not os.path.exists(os.path.join(args.load, "latest_checkpointed_iteration.txt"))
-        ):
-            args.no_load_optim = True
-            args.no_load_rng = True
-            args.finetune = True
-            args.load = args.ref_load
-            if args.ref_ckpt_step is not None:
-                args.ckpt_step = args.ref_ckpt_step
-            args.start_rollout_id = 0
+    if (
+        args.load is None
+        or not os.path.exists(args.load)
+        or not os.path.exists(os.path.join(args.load, "latest_checkpointed_iteration.txt"))
+    ):
+        args.no_load_optim = True
+        args.no_load_rng = True
+        args.finetune = True
+        args.load = args.ref_load
+        if args.ref_ckpt_step is not None:
+            args.ckpt_step = args.ref_ckpt_step
+        args.start_rollout_id = 0
 
     if args.eval_interval is not None:
         assert args.eval_datasets, "Evaluation datasets must be configured when eval_interval is set."
@@ -1880,10 +1724,6 @@ def slime_validate_args(args):
 
     if args.eval_reward_key is None:
         args.eval_reward_key = args.reward_key
-
-    if args.dump_details is not None:
-        args.save_debug_rollout_data = f"{args.dump_details}/rollout_data/{{rollout_id}}.pt"
-        args.save_debug_train_data = f"{args.dump_details}/train_data/{{rollout_id}}_{{rank}}.pt"
 
     if args.load_debug_rollout_data is not None:
         logger.info(
@@ -1982,9 +1822,6 @@ def slime_validate_args(args):
 
     if args.enable_mtp_training:
         assert args.mtp_num_layers, "mtp_num_layers must be set when enable_mtp_training is set"
-
-    if args.use_rollout_routing_replay:
-        args.use_routing_replay = True
 
     if args.custom_config_path:
         with open(args.custom_config_path) as f:

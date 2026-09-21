@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare the paper student's initial Megatron checkpoint; preview by default."""
+"""Prepare the student's initial Megatron checkpoint."""
 from __future__ import annotations
 
 import argparse
@@ -16,7 +16,7 @@ from train import PROFILES, ROOT, load_local_settings, read_json
 
 def build_plan(profile_name, hf_checkpoint=None, output_dir=None, megatron_path=None, gpus='0', local=None):
     if profile_name not in PROFILES:
-        raise ValueError(f'Unknown paper profile: {profile_name}')
+        raise ValueError(f'Unknown profile: {profile_name}')
     if not re.fullmatch(r'\d+(?:,\d+)*',gpus) or len(set(gpus.split(','))) != len(gpus.split(',')):
         raise ValueError('gpus must contain distinct comma-separated GPU indices')
     local = load_local_settings(None,{}) if local is None else local
@@ -41,7 +41,7 @@ def build_plan(profile_name, hf_checkpoint=None, output_dir=None, megatron_path=
                 '--megatron-to-hf-mode','raw','--no-save-optim','--no-save-rng',
                 '--no-rope-fusion','--no-masked-softmax-fusion','--no-persist-layer-norm',
                 '--no-gradient-accumulation-fusion','--attention-backend','flash']
-    return {'schema_version':1,'record_type':'initial_checkpoint_preparation',
+    return {'schema_version':1,
             'profile':profile_name,'student':profile['student'],'model_config':profile['model_config'],
             'expected_model_type':'qwen2' if profile_name=='math_nemotron' else 'qwen3',
             'hf_checkpoint':hf,'output_dir':output,'megatron_path':megatron,'gpus':gpus,
@@ -66,7 +66,7 @@ def preflight(plan):
     if os.path.lexists(plan['output_dir']):
         raise RuntimeError('Output directory already exists; choose a new directory')
     if sys.platform != 'linux':
-        raise RuntimeError('Checkpoint conversion requires Linux with NVIDIA GPUs; preview is platform independent')
+        raise RuntimeError('Checkpoint conversion requires Linux with NVIDIA GPUs')
     for key in ('hf_checkpoint','megatron_path'):
         if not Path(plan[key]).is_dir():
             raise RuntimeError(f'Missing {key}: {plan[key]}')
@@ -94,7 +94,7 @@ def execute_plan(plan):
     output = Path(plan['output_dir'])
     output.mkdir(parents=True,exist_ok=False)
     (output/'preparation_plan.json').write_text(json.dumps(plan,indent=2)+'\n')
-    status = {'record_type':'initial_checkpoint_preparation','status':'running','started_unix':time.time()}
+    status = {'status':'running','started_unix':time.time()}
     try:
         subprocess.run(plan['command'],cwd=ROOT,env=conversion_environment(plan),check=True)
         marker = output/'latest_checkpointed_iteration.txt'
@@ -118,18 +118,12 @@ def main(argv=None):
     parser.add_argument('--megatron-path',help='Default: MEGATRON_LM_PATH from .env')
     parser.add_argument('--gpus',default='0',help='Idle GPU indices; default is one GPU, 0')
     parser.add_argument('--env-file',type=Path,default=ROOT/'.env')
-    parser.add_argument('--preview-json',type=Path)
-    mode = parser.add_mutually_exclusive_group()
-    mode.add_argument('--dry-run',action='store_true',help='Default: print the conversion plan only')
-    mode.add_argument('--execute',action='store_true',help='Convert the initial student weights on GPUs')
+    parser.add_argument('--execute',action='store_true',help='Convert weights on GPUs; otherwise print the configuration')
     args = parser.parse_args(argv)
     try:
         plan = build_plan(args.profile,args.hf_checkpoint,args.output_dir,args.megatron_path,args.gpus,
                           load_local_settings(args.env_file))
         rendered = json.dumps(plan,indent=2)
-        if args.preview_json:
-            args.preview_json.parent.mkdir(parents=True,exist_ok=True)
-            args.preview_json.write_text(rendered+'\n')
         if args.execute:
             execute_plan(plan)
         else:

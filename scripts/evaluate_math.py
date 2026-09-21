@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Preview or run mathematics evaluation using HF weights and SGLang inference.
-
-No optimizer, training actor, or Megatron model is created. The preview uses
-only the Python standard library; generation requires the runtime dependencies.
-"""
+"""Evaluate mathematical benchmarks using HF weights and SGLang inference."""
 
 from __future__ import annotations
 
@@ -121,8 +117,7 @@ def load_questions(dataset: dict, limit: int | None = None) -> list[dict]:
             metadata = dict(metadata)
             metadata["data_source"] = dataset["name"]
             metadata["rm_type"] = "math"
-            # The published benchmark identifies rows either here or inside
-            # metadata.extra_info. Never infer HMMT row IDs from list positions.
+            # Preserve explicit question IDs from top-level or nested metadata.
             if "index" not in metadata and row.get("index") is not None:
                 metadata["index"] = row["index"]
             if "extra_info" not in metadata and isinstance(row.get("extra_info"), dict):

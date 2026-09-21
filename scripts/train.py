@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render a paper training plan with stdlib only; start services only with --execute."""
+"""Train a teacher-student profile with sparse token selection."""
 from __future__ import annotations
 
 import argparse
@@ -50,7 +50,7 @@ def read_json(path: Path) -> dict:
 
 
 def load_local_settings(path: Path | None, environ: dict | None = None) -> dict:
-    """Parse .env as data. Scientific parameters can only come from versioned JSON."""
+    """Load local model paths and hardware resources."""
     values = {**PATH_DEFAULTS, **RESOURCE_DEFAULTS}
     if path is not None and path.exists():
         for number, line in enumerate(path.read_text().splitlines(), 1):
@@ -144,7 +144,7 @@ def build_plan(profile_name: str, method: str = 'ier', budget: float | None = No
              'student_checkpoint': local[profile['checkpoint_path_key']], 'prompt_data': local[profile['data_path_key']],
              'megatron': local['MEGATRON_LM_PATH'], 'output': str(output)}
     paths = {k: str(Path(v).expanduser().resolve()) for k, v in paths.items()}
-    r, t, s, d = resources, config['training'], config['selection'], config['implementation_defaults']
+    r, t, s, d = resources, config['training'], config['selection'], config['runtime']
     python = local['PYTHON_BIN']
     train = [python, str(ROOT / 'scripts/train_async.py')]
     def add(flag, value=None):
@@ -170,8 +170,6 @@ def build_plan(profile_name: str, method: str = 'ier', budget: float | None = No
         '--opd-kl-coef':d['opd_kl_coef'], '--kl-loss-coef':0.0, '--kl-loss-type':'low_var_kl',
         '--entropy-coef':0.0, '--eps-clip':d['eps_clip'], '--eps-clip-high':d['eps_clip_high'],
         '--opd-topk-metrics-k':s['top_k'], '--opd-topk-sample-k':0,
-        '--opd-token-bank-dir':str(output / 'token_bank'), '--opd-token-bank-format':'csv',
-        '--opd-token-bank-pair-id':profile_name, '--opd-teacher-name':profile['teacher'], '--opd-student-name':profile['student'],
         '--opd-budget-mask':method, '--opd-budget-ratio':budget, '--opd-budget-mask-seed':d['selector_seed'],
         '--opd-budget-min-keep-per-sample':s['min_keep_per_sample'], '--opd-ier-floor-logp':s['missing_log_probability'],
         '--ier-eps':s['epsilon'], '--opd-compat-proxy':d['compat_proxy'], '--opd-metric-normalization':d['metric_normalization'],
@@ -212,9 +210,9 @@ def build_plan(profile_name: str, method: str = 'ier', budget: float | None = No
                   'CUDA_DEVICE_MAX_CONNECTIONS':'1','NCCL_CUMEM_ENABLE':'0','PYTHONUNBUFFERED':'1'}
     ray_submit = ray_prefix + ['job','submit','--address',f'http://127.0.0.1:{r["RAY_DASHBOARD_PORT"]}',
                  '--submission-id',run_name,'--runtime-env-json',json.dumps({'env_vars':worker_env}), '--'] + train
-    return {'schema_version':1,'record_type':'new_reproduction_launch_plan','historical_experiment_record':False,
+    return {'schema_version':1,
             'run_name':run_name,'profile':profile,'suite':suite,'method':method,'budget_ratio':budget,
-            'paper_config':copy.deepcopy(config),'paths':paths,'resources':r,'ray_temp':ray_temp,
+            'config':copy.deepcopy(config),'paths':paths,'resources':r,'ray_temp':ray_temp,
             'worker_env':worker_env,'commands':{'teacher':teacher,'ray_start':ray_start,'train':train,'ray_submit':ray_submit}}
 
 
@@ -226,21 +224,14 @@ def main(argv=None) -> int:
     parser.add_argument('--suite', choices=('main','reported_comparisons'), default='main')
     parser.add_argument('--env-file', type=Path, default=ROOT / '.env')
     parser.add_argument('--run-name')
-    parser.add_argument('--preview-json', type=Path, help='Optionally save the preview without starting any service')
-    modes = parser.add_mutually_exclusive_group()
-    modes.add_argument('--dry-run', action='store_true', help='Default: print the resolved plan only')
-    modes.add_argument('--execute', action='store_true', help='Explicitly start GPU training and save the resolved configuration')
+    parser.add_argument('--execute', action='store_true', help='Start GPU training; otherwise print the configuration')
     args = parser.parse_args(argv)
     try:
         plan = build_plan(args.profile,args.method,args.budget,args.suite,load_local_settings(args.env_file),args.run_name)
         rendered = json.dumps(plan,indent=2)
-        if args.preview_json:
-            args.preview_json.parent.mkdir(parents=True,exist_ok=True)
-            args.preview_json.write_text(rendered+'\n')
         if not args.execute:
             print(rendered)
             return 0
-        # Imports neither Torch nor the training stack while resolving or previewing.
         from _runtime import execute_plan
         execute_plan(plan)
         return 0

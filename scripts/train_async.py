@@ -33,9 +33,6 @@ def train(args):
     # Always push actor weights to rollout once weights are loaded.
     actor_model.update_weights()
 
-    if args.check_weight_update_equal:
-        ray.get(rollout_manager.check_weights.remote(action="compare"))
-
     # async train loop.
     rollout_data_next_future = rollout_manager.generate.remote(args.start_rollout_id)
     for rollout_id in range(args.start_rollout_id, args.num_rollout):

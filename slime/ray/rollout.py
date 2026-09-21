@@ -5,7 +5,6 @@ import multiprocessing
 import os
 import random
 import time
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -120,7 +119,6 @@ class ServerGroup:
                     "SGLANG_BATCH_INVARIANT_OPS_ENABLE_MM_FALLBACK_VARIANT": "true",
                     "SGLANG_ENABLE_HEALTH_ENDPOINT_GENERATION": "false",
                     "SGLANG_ENABLE_STRICT_MEM_CHECK_DURING_IDLE": "false",
-                    "SLIME_ENABLE_PROFILING": "true",
                 }.items()
             }
             rollout_engine = RolloutRayActor.options(
@@ -389,7 +387,6 @@ class RolloutManager:
                     monitor = RolloutHealthMonitor(group, args)
                     monitor.start()
                     self._health_monitors.append(monitor)
-            self._ci_fault_injection_pending = self.args.ci_test  # Flag for CI fault injection
 
     def _get_metrics_router_addr(self) -> str | None:
         """Return the router address for scraping SGLang engine metrics.
@@ -407,27 +404,6 @@ class RolloutManager:
     def get_metrics_router_addr(self) -> str | None:
         """Public wrapper for remote calls from the driver process."""
         return self._get_metrics_router_addr()
-
-    def _try_ci_fault_injection(self):
-        """Try to inject fault during generate (when health monitor is running)."""
-        if not self._ci_fault_injection_pending:
-            return
-
-        # Only inject fault once
-        self._ci_fault_injection_pending = False
-
-        if self.server and self.server.server_groups[0].all_engines and self.server.server_groups[0].all_engines[0]:
-            logger.info("CI Fault Injection: Simulating crash on engine 0 during generate")
-            try:
-                # This will cause the ray actor to exit
-                self.server.server_groups[0].all_engines[0].simulate_crash.remote()
-                # Wait for health monitor to detect the crash and mark engine as None
-                # health_check_interval + health_check_timeout + buffer
-                wait_time = self.args.rollout_health_check_interval + self.args.rollout_health_check_timeout + 5
-                logger.info(f"CI Fault Injection: Waiting {wait_time}s for health monitor to detect crash")
-                time.sleep(wait_time)
-            except Exception as e:
-                logger.warning(f"CI Fault Injection failed: {e}")
 
     def dispose(self):
         for monitor in self._health_monitors:
@@ -479,10 +455,7 @@ class RolloutManager:
         start_time = time.time()
         self.rollout_id = rollout_id
         self.health_monitoring_resume()
-        if self.args.ci_test and self.args.use_fault_tolerance and rollout_id >= 2:
-            self._try_ci_fault_injection()
         data, metrics = self._get_rollout_data(rollout_id=rollout_id)
-        self._save_debug_rollout_data(data, rollout_id=rollout_id, evaluation=False)
         _log_rollout_data(rollout_id, self.args, data, metrics, time.time() - start_time)
         if self.args.debug_rollout_only:
             # if debug rollout only, we don't convert samples to train data and directly return
@@ -498,7 +471,6 @@ class RolloutManager:
 
         result = call_rollout_fn(self.eval_generate_rollout, self.args, rollout_id, self.data_source, evaluation=True)
         data = result.data
-        self._save_debug_rollout_data(data, rollout_id=rollout_id, evaluation=True)
         _log_eval_rollout_data(rollout_id, self.args, data, result.metrics)
 
     def drain_for_weight_update(self, timeout: float = 120.0):
@@ -592,9 +564,6 @@ class RolloutManager:
         for monitor in self._health_monitors:
             monitor.resume()
 
-    def check_weights(self, action: str):
-        return ray.get([engine.check_weights.remote(action=action) for engine in self.rollout_engines])
-
     def _get_rollout_data(self, rollout_id):
         if self.args.load_debug_rollout_data:
             data = torch.load(
@@ -602,13 +571,6 @@ class RolloutManager:
                 weights_only=False,
             )["samples"]
             data = [Sample.from_dict(sample) for sample in data]
-            if (ratio := self.args.load_debug_rollout_data_subsample) is not None:
-                original_num_rows = len(data)
-                rough_subsample_num_rows = int(original_num_rows * ratio)
-                data = data[: rough_subsample_num_rows // 2] + data[-rough_subsample_num_rows // 2 :]
-                logger.info(
-                    f"Subsample loaded debug rollout data using {ratio=} and change num rows {original_num_rows} -> {len(data)}"
-                )
             metrics = None
         else:
             data = call_rollout_fn(self.generate_rollout, self.args, rollout_id, self.data_source, evaluation=False)
@@ -663,25 +625,6 @@ class RolloutManager:
             )
 
         return dynamic_gbs
-
-    def _save_debug_rollout_data(self, data, rollout_id, evaluation: bool):
-        # TODO to be refactored (originally Buffer._set_data)
-        if (path_template := self.args.save_debug_rollout_data) is not None:
-            path = Path(path_template.format(rollout_id=("eval_" if evaluation else "") + str(rollout_id)))
-            logger.info(f"Save debug rollout data to {path}")
-            path.parent.mkdir(parents=True, exist_ok=True)
-
-            # TODO may improve the format
-            if evaluation:
-                dump_data = dict(
-                    samples=[sample.to_dict() for dataset_name, info in data.items() for sample in info["samples"]]
-                )
-            else:
-                dump_data = dict(
-                    samples=[sample.to_dict() for sample in data],
-                )
-
-            torch.save(dict(rollout_id=rollout_id, **dump_data), path)
 
     def _post_process_rewards(self, samples: list[Sample] | list[list[Sample]]):
         if self.custom_reward_post_process_func is not None:
@@ -765,9 +708,6 @@ class RolloutManager:
         if samples[0].rollout_log_probs is not None:
             train_data["rollout_log_probs"] = [sample.rollout_log_probs for sample in samples]
 
-        if samples[0].rollout_routed_experts is not None:
-            train_data["rollout_routed_experts"] = [sample.rollout_routed_experts for sample in samples]
-
         if samples[0].train_metadata is not None:
             train_data["metadata"] = [sample.train_metadata for sample in samples]
 
@@ -813,7 +753,6 @@ class RolloutManager:
                 "round_number",
                 "sample_indices",
                 "rollout_log_probs",
-                "rollout_routed_experts",
                 "prompt",
                 "teacher_log_probs",
             ]:

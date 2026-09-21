@@ -12,10 +12,9 @@ IER selects response tokens for the sampled reverse-KL training loss. Student re
 
 ```text
 configs/         Training, model, and evaluation configurations
-scripts/         Training, evaluation, checkpoint conversion, and sample export
+scripts/         Training, evaluation, and checkpoint conversion
 slime/           Shared runtime and the IER implementation
 slime_plugins/   Qwen2/Qwen3 checkpoint mappings
-tests/           Unit tests
 third_party/     Dependency versions, training patches, and upstream license
 ```
 

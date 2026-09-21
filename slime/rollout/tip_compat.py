@@ -1,8 +1,5 @@
-import csv
-import json
 import math
 import random
-from pathlib import Path
 from typing import Any
 
 
@@ -12,71 +9,6 @@ FUSION_SELECTORS = tuple(f"{base}_ier_{fusion}" for base in BASE_SELECTORS for f
 BUDGET_METHODS = ("full", "ier", *BASE_SELECTORS, "random", "sampled_rkl_max", "sampled_rkl_min", *FUSION_SELECTORS)
 
 _ROLLOUT_COUNTER = 0
-_CSV_FIELDS = [
-    "schema_version",
-    "pair_id",
-    "teacher_name",
-    "student_name",
-    "seed",
-    "rollout_id",
-    "sample_index",
-    "group_index",
-    "sample_ordinal",
-    "tok_pos",
-    "pos_norm",
-    "prompt_len",
-    "resp_len",
-    "total_len",
-    "truncated",
-    "token_id",
-    "student_logp_sampled",
-    "teacher_logp_sampled",
-    "sampled_reverse_kl",
-    "sampled_teacher_adv",
-    "student_top1_id",
-    "teacher_top1_id",
-    "student_top1_prob",
-    "teacher_top1_prob",
-    "student_topk_mass",
-    "teacher_topk_mass",
-    "Hs_topk",
-    "Ht_topk",
-    "Hs_topk_norm",
-    "Ht_topk_norm",
-    "KLf_union",
-    "KLr_union",
-    "Cmass",
-    "Cmass_topk",
-    "Cmass_true",
-    "Cmass_exact",
-    "Coverlap",
-    "CBC",
-    "reach_t1",
-    "target_in_student_topk",
-    "target_in_teacher_topk",
-    "target_student_rank",
-    "target_teacher_rank",
-    "loss_mask_original",
-    "H_norm",
-    "D_norm",
-    "C_norm",
-    "DC_norm",
-    "Dlearn",
-    "tip_score",
-    "ca_softor_score",
-    # IER-OPD diagnostic columns (populated when the IER score is computed;
-    # left empty/0 otherwise so non-IER runs export an identical schema).
-    "ier_r",
-    "ier_rank",
-    "budget_method",
-    "budget_ratio",
-    "budget_score",
-    "budget_keep",
-    "student_top_ids",
-    "student_top_logps",
-    "teacher_top_ids",
-    "teacher_top_logps",
-]
 
 
 def topk_enabled(args) -> bool:
@@ -225,34 +157,12 @@ def process_tip_compat_metrics(args, samples, teacher_log_probs, raw_rewards) ->
             s_logp = _safe_float(sample.rollout_log_probs[tok_pos]) if sample.rollout_log_probs else float("nan")
             t_logp = _safe_float(t_log_probs[tok_pos]) if tok_pos < len(t_log_probs) else float("nan")
             row = {
-                "schema_version": 2,
-                "pair_id": getattr(args, "opd_token_bank_pair_id", ""),
-                "teacher_name": getattr(args, "opd_teacher_name", None)
-                or getattr(args, "opd_teacher_load", None)
-                or getattr(args, "rm_url", ""),
-                "student_name": getattr(args, "opd_student_name", None) or getattr(args, "hf_checkpoint", ""),
-                "seed": getattr(args, "seed", None),
-                "rollout_id": None,
-                "sample_index": sample.index,
-                "group_index": sample.group_index,
-                "sample_ordinal": sample_ordinal,
-                "tok_pos": tok_pos,
                 "pos_norm": tok_pos / max(response_length - 1, 1),
-                "prompt_len": prompt_len,
-                "resp_len": response_length,
-                "total_len": len(sample.tokens),
-                "truncated": int(getattr(sample.status, "value", sample.status) == "truncated"),
-                "token_id": token_id,
-                "student_logp_sampled": s_logp,
-                "teacher_logp_sampled": t_logp,
                 "sampled_reverse_kl": s_logp - t_logp if math.isfinite(s_logp) and math.isfinite(t_logp) else float("nan"),
-                "sampled_teacher_adv": t_logp - s_logp if math.isfinite(s_logp) and math.isfinite(t_logp) else float("nan"),
                 "loss_mask_original": int(original_loss_mask[tok_pos]) if tok_pos < len(original_loss_mask) else 1,
                 **metrics,
                 "ier_r": ier_r,
                 "ier_rank": 0.0,
-                "budget_method": getattr(args, "opd_budget_mask", "full"),
-                "budget_ratio": float(getattr(args, "opd_budget_ratio", 1.0)),
                 "budget_score": 0.0,
                 "budget_keep": int(original_loss_mask[tok_pos]) if tok_pos < len(original_loss_mask) else 1,
             }
@@ -264,8 +174,7 @@ def process_tip_compat_metrics(args, samples, teacher_log_probs, raw_rewards) ->
 
     _add_normalized_scores(args, rows)
     _apply_budget_mask(args, rows, sample_rows, samples)
-    _export_rows(args, rows)
-    # Exporting diagnostics must not change the random baseline's seed sequence.
+    # Advance the random selector seed once per rollout.
     _next_rollout_id()
 
 
@@ -378,10 +287,6 @@ def _compute_topk_metrics(
         "target_in_teacher_topk": int(token_id in set(t_ids)),
         "target_student_rank": target_s_rank,
         "target_teacher_rank": target_t_rank,
-        "student_top_ids": json.dumps(s_ids),
-        "student_top_logps": json.dumps([logp for _, logp in student_items]),
-        "teacher_top_ids": json.dumps(t_ids),
-        "teacher_top_logps": json.dumps([logp for _, logp in teacher_items]),
     }
 
 
@@ -425,7 +330,7 @@ def _rank_of(ids: list[int], token_id: int) -> int | None:
 def _add_normalized_scores(args, rows: list[dict[str, Any]]) -> None:
     """Normalize only tokens eligible for this rollout batch's loss mask."""
     if getattr(args, "opd_compat_proxy", "mass") != "mass":
-        raise ValueError("The paper configuration requires --opd-compat-proxy mass")
+        raise ValueError("Token selection requires --opd-compat-proxy mass")
     valid = [row for row in rows if int(row["loss_mask_original"]) == 1]
     for row in rows:
         for key in ("H_norm", "D_norm", "C_norm", "DC_norm", "Dlearn", "tip_score", "ca_softor_score"):
@@ -444,7 +349,7 @@ def _add_normalized_scores(args, rows: list[dict[str, Any]]) -> None:
 
 def _normalize(values: list[float], args) -> list[float]:
     if getattr(args, "opd_metric_normalization", "batch_quantile") != "batch_quantile":
-        raise ValueError("The paper configuration requires --opd-metric-normalization batch_quantile")
+        raise ValueError("Token selection requires --opd-metric-normalization batch_quantile")
     finite = [v for v in values if math.isfinite(v)]
     if not finite:
         return [0.0 for _ in values]
@@ -560,104 +465,3 @@ def _next_rollout_id() -> int:
     rollout_id = _ROLLOUT_COUNTER
     _ROLLOUT_COUNTER += 1
     return rollout_id
-
-
-def _export_rows(args, rows) -> None:
-    export_dir = getattr(args, "opd_token_bank_dir", None)
-    if not export_dir:
-        return
-    rollout_id = _current_rollout_id()
-    for row in rows:
-        row["rollout_id"] = rollout_id
-
-    path = Path(export_dir)
-    path.mkdir(parents=True, exist_ok=True)
-    fmt = getattr(args, "opd_token_bank_format", "csv")
-    if not bool(getattr(args, "opd_token_bank_raw_topk", False)):
-        for row in rows:
-            row["student_top_ids"] = ""
-            row["student_top_logps"] = ""
-            row["teacher_top_ids"] = ""
-            row["teacher_top_logps"] = ""
-
-    if fmt == "jsonl":
-        out = path / f"rollout_{rollout_id:06d}.jsonl"
-        with out.open("w", encoding="utf-8") as f:
-            for row in rows:
-                f.write(json.dumps(row, ensure_ascii=True, allow_nan=True) + "\n")
-    else:
-        out = path / f"rollout_{rollout_id:06d}.csv"
-        with out.open("w", newline="", encoding="utf-8") as f:
-            fields = _CSV_FIELDS
-            writer = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
-            writer.writeheader()
-            writer.writerows(rows)
-
-    _append_summary(path, rows, rollout_id)
-    _write_config(path, args)
-
-
-def _append_summary(path: Path, rows, rollout_id: int) -> None:
-    valid = [row for row in rows if int(row["loss_mask_original"]) == 1]
-    kept = [row for row in valid if int(row["budget_keep"]) == 1]
-    summary = {
-        "rollout_id": rollout_id,
-        "num_tokens": len(rows),
-        "num_valid_tokens": len(valid),
-        "num_kept_tokens": len(kept),
-        "keep_ratio": len(kept) / max(len(valid), 1),
-        "mean_H_norm": _mean(row["H_norm"] for row in valid),
-        "mean_D_norm": _mean(row["D_norm"] for row in valid),
-        "mean_C_norm": _mean(row["C_norm"] for row in valid),
-        "mean_tip_score": _mean(row["tip_score"] for row in valid),
-        "mean_ca_softor_score": _mean(row["ca_softor_score"] for row in valid),
-        "mean_reach_t1": _mean(row["reach_t1"] for row in valid),
-        "budget_method": rows[0].get("budget_method", "full") if rows else "full",
-        "budget_ratio": rows[0].get("budget_ratio", 1.0) if rows else 1.0,
-    }
-    out = path / "summary.csv"
-    exists = out.exists()
-    with out.open("a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=list(summary.keys()))
-        if not exists:
-            writer.writeheader()
-        writer.writerow(summary)
-
-
-def _mean(values) -> float:
-    xs = [float(v) for v in values if v is not None and math.isfinite(float(v))]
-    return sum(xs) / len(xs) if xs else 0.0
-
-
-def _write_config(path: Path, args) -> None:
-    out = path / "config.json"
-    if out.exists():
-        return
-    cfg = {
-        "schema_version": 2,
-        "opd_topk_metrics_k": getattr(args, "opd_topk_metrics_k", None),
-        "opd_budget_mask": getattr(args, "opd_budget_mask", None),
-        "opd_budget_ratio": getattr(args, "opd_budget_ratio", None),
-        "opd_compat_proxy": getattr(args, "opd_compat_proxy", None),
-        "opd_metric_normalization": getattr(args, "opd_metric_normalization", None),
-        "opd_exact_cmass": getattr(args, "opd_exact_cmass", None),
-        "opd_exact_cmass_max_union": getattr(args, "opd_exact_cmass_max_union", None),
-        "opd_exact_cmass_overflow": getattr(args, "opd_exact_cmass_overflow", None),
-        "notes": (
-            "Cmass and KL metrics are computed on returned top-k supports. "
-            "When opd_exact_cmass is enabled, Cmass is replaced by true teacher mass on student top-k support. "
-            "Cmass_topk always keeps the teacher-top-k lower bound."
-        ),
-    }
-    cfg["selection"] = {
-        "population": "all valid response tokens in this rollout batch",
-        "budget": "ceil(N_valid * ratio), then per-response minimum fallback",
-        "min_keep_per_sample": getattr(args, "opd_budget_min_keep_per_sample", 1),
-        "ier_rank": "stable ordinal batch rank/(N_valid-1); singleton=0",
-        "tie_break": "fusion: IER descending, then row order; other scores: row order",
-        "fallback": "same global scores/order; final count may exceed target budget",
-        "floor_domain": "log-probability",
-        "floor_logp": getattr(args, "opd_ier_floor_logp", -12.0),
-        "ier_eps": getattr(args, "ier_eps", 1e-8),
-    }
-    out.write_text(json.dumps(cfg, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")

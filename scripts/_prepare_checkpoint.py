@@ -1,5 +1,5 @@
 """GPU worker invoked only by prepare_checkpoint.py --execute through torchrun."""
-# Adapted from slime's tools/convert_hf_to_torch_dist.py for the paper students.
+# Adapted from slime's tools/convert_hf_to_torch_dist.py for dense Qwen2/Qwen3 models.
 import gc
 import os
 from pathlib import Path
@@ -43,7 +43,7 @@ def main():
         args = set_default_megatron_args(parse_args(add_conversion_args))
         hf_config = AutoConfig.from_pretrained(args.hf_checkpoint,trust_remote_code=False)
         if hf_config.model_type not in ('qwen2','qwen3') or getattr(hf_config,'quantization_config',None):
-            raise ValueError('This conversion worker supports the paper dense Qwen2/Qwen3 students only')
+            raise ValueError('This conversion worker supports dense Qwen2/Qwen3 students only')
         _hf_validate_args(args,hf_config)
         args.save_interval = 1
         args.micro_batch_size = 1

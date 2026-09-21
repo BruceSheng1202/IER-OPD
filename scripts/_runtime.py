@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Own the teacher/Ray processes for one explicit training execution."""
+"""Start and manage teacher and Ray services for training."""
 from __future__ import annotations
 
-import argparse
 import contextlib
 import json
 import os
@@ -20,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def child_environment(plan: dict, gpu_key: str) -> dict:
-    # Never inherit scientific configuration through shell environment variables.
+    # Use the launch configuration for worker settings.
     allowed = ('PATH','HOME','USER','LOGNAME','LANG','LC_ALL','TMPDIR','LD_LIBRARY_PATH',
                'CUDA_HOME','CUDA_PATH','CONDA_PREFIX','VIRTUAL_ENV','SSL_CERT_FILE',
                'REQUESTS_CA_BUNDLE','HF_HOME','HF_HUB_CACHE','HUGGINGFACE_HUB_CACHE','HF_TOKEN')
@@ -65,7 +64,7 @@ def check_gpu_idle(plan: dict) -> None:
 
 def preflight(plan: dict) -> None:
     if sys.platform != 'linux':
-        raise RuntimeError('Training execution requires Linux with NVIDIA GPUs; preview is platform independent')
+        raise RuntimeError('Training execution requires Linux with NVIDIA GPUs')
     paths = plan['paths']
     for key in ('teacher','student_hf','student_checkpoint','megatron'):
         if not Path(paths[key]).is_dir():
@@ -78,7 +77,7 @@ def preflight(plan: dict) -> None:
     if Path(paths['output']).exists():
         raise RuntimeError('Output run directory already exists; use a new run name')
     validate_ray_temp(plan['ray_temp'])
-    # psutil is needed only for scoped runtime cleanup, not for previews.
+    # Verify the process-management dependency before starting services.
     import psutil  # noqa: F401
     check_gpu_idle(plan)
     for key, port in plan['resources'].items():
@@ -157,7 +156,7 @@ def execute_plan(plan: dict) -> None:
     (output/'resolved_config.json').write_text(json.dumps(resolved,indent=2)+'\n')
     owned = {}
     started = time.time()
-    status = {'record_type':'new_reproduction_execution','started_unix':started,'status':'starting'}
+    status = {'started_unix':started,'status':'starting'}
     handles = []
     previous_handler = signal.getsignal(signal.SIGTERM)
     def interrupted(signum, frame):
@@ -207,21 +206,3 @@ def execute_plan(plan: dict) -> None:
                 handle.close()
             status['finished_unix'] = time.time()
             (output/'execution_status.json').write_text(json.dumps(status,indent=2)+'\n')
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('plan',type=Path)
-    parser.add_argument('--execute',action='store_true')
-    args = parser.parse_args()
-    plan = json.loads(args.plan.read_text())
-    if not args.execute:
-        print(json.dumps(plan,indent=2))
-        return
-    if plan.get('record_type')!='new_reproduction_launch_plan':
-        parser.error('Not a training launch plan produced by scripts/train.py')
-    execute_plan(plan)
-
-
-if __name__=='__main__':
-    main()

@@ -1,11 +1,5 @@
 {
-  "description": "Additional independently reported mathematical selector comparisons, Appendix C.4.",
-  "paper_pages": [
-    18,
-    19,
-    20,
-    21
-  ],
+  "description": "Additional mathematical selector comparisons",
   "tasks": [
     "math"
   ],

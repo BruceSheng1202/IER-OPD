@@ -24,7 +24,6 @@ class Sample:
     loss_mask: list[int] | None = None
     weight_versions: list[str] = field(default_factory=list)
     rollout_log_probs: list[float] | None = None  # Log probabilities from rollout engine
-    rollout_routed_experts: list[list[int]] | None = None  # Routed experts from rollout engine
     remove_sample: bool = False
     teacher_log_probs: list[float] | None = None  # Log probabilities from teacher model for OPD
 

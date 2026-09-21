@@ -1,12 +1,6 @@
 {
   "schema_version": 1,
-  "description": "Paper main-experiment configuration. Generated runs are new reproductions, not archived experiment records.",
-  "paper_pages": [
-    5,
-    6,
-    8,
-    17
-  ],
+  "description": "Training configuration",
   "training": {
     "rollout_batch_size": 4,
     "n_samples_per_prompt": 16,
@@ -54,7 +48,7 @@
     "missing_log_probability": -12,
     "epsilon": 1e-08
   },
-  "implementation_defaults": {
+  "runtime": {
     "precision": "bfloat16",
     "seed": 1234,
     "rollout_seed": 42,
@@ -68,7 +62,6 @@
     "advantage_estimator": "grpo",
     "eps_clip": 0.2,
     "eps_clip_high": 0.28,
-    "update_weights_interval": 1,
-    "note": "Explicit implementation defaults retained from the existing implementation; these values are not claimed to be separately specified by the manuscript."
+    "update_weights_interval": 1
   }
 }

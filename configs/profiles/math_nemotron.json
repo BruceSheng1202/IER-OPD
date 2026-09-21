@@ -1,9 +1,5 @@
 {
   "name": "math_nemotron",
-  "paper_pages": [
-    5,
-    17
-  ],
   "task": "math",
   "teacher": "JustRL-Nemotron-1.5B",
   "student": "OpenMath-Nemotron-1.5B",

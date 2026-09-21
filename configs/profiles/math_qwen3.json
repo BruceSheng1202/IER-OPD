@@ -1,9 +1,5 @@
 {
   "name": "math_qwen3",
-  "paper_pages": [
-    5,
-    17
-  ],
   "task": "math",
   "teacher": "JustRL-Qwen3-4B",
   "student": "Qwen3-1.7B",

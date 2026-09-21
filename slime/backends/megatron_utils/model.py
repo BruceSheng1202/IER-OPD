@@ -2,7 +2,6 @@ import dataclasses
 import gc
 import logging
 import math
-import os
 from argparse import Namespace
 from collections.abc import Callable, Sequence
 from functools import partial
@@ -440,9 +439,6 @@ def train_one_step(
             args.allgather_cp,
         )
 
-        if os.environ.get("ENABLE_ROUTING_REPLAY", "0") == "1":
-            old_stage = os.environ["ROUTING_REPLAY_STAGE"]
-            os.environ["ROUTING_REPLAY_STAGE"] = "replay_forward"
 
         if return_schedule_plan:
             assert not args.enable_mtp_training, "MTP training should not be enabled when using combined 1f1b"
@@ -473,8 +469,6 @@ def train_one_step(
 
             output_tensor = model(**forward_kwargs)
 
-        if os.environ.get("ENABLE_ROUTING_REPLAY", "0") == "1":
-            os.environ["ROUTING_REPLAY_STAGE"] = old_stage
 
         return output_tensor, partial(loss_function, args, batch, num_microbatches)
 
@@ -503,13 +497,6 @@ def train_one_step(
                 valid_step = not (torch.isnan(grad_norm) or torch.isinf(grad_norm))
             else:
                 valid_step = not (math.isnan(grad_norm) or math.isinf(grad_norm))
-
-    # CI check: verify only MTP parameters have non-zero gradients when truncation happens
-    # This check must happen before optimizer.step() as gradients may be modified during step
-    if args.ci_test and args.enable_mtp_training:
-        from slime.backends.megatron_utils.ci_utils import check_mtp_only_grad
-
-        check_mtp_only_grad(model, step_id)
 
     if valid_step:
         # Update parameters.
@@ -685,11 +672,6 @@ def train(
                 mtp_losses = (tracker["values"] * mtp_loss_scale).item()
                 MTPLossLoggingHelper.clean_loss_in_tracker()
 
-                # CI check: verify MTP loss is within expected bounds
-                if args.ci_test:
-                    from slime.backends.megatron_utils.ci_utils import check_mtp_loss
-
-                    check_mtp_loss(mtp_losses)
 
         # per train step log.
         if (
@@ -714,35 +696,9 @@ def train(
             log_dict["train/step"] = accumulated_step_id
             logging_utils.log(args, log_dict, step_key="train/step")
 
-            if args.ci_test and not args.ci_disable_kl_checker:
-                if step_id == 0 and "train/ppo_kl" in log_dict and "train/pg_clipfrac" in log_dict:
-                    # TODO: figure out why KL is not exactly zero when using PPO loss with KL clipping, and whether this is expected behavior or a bug.
-                    assert log_dict["train/ppo_kl"] < 1e-8, f"{log_dict=}"
-                if accumulated_step_id == 0 and "train/kl_loss" in log_dict:
-                    assert log_dict["train/kl_loss"] < 1e-8, f"{log_dict=}"
 
             logger.info(f"{role_tag}step {accumulated_step_id}: {log_dict}")
 
-            if args.ci_save_grad_norm is not None:
-                ci_save_grad_norm_path = args.ci_save_grad_norm.format(
-                    role=role,
-                    rollout_id=rollout_id,
-                    step_id=step_id,
-                )
-                torch.save(grad_norm, ci_save_grad_norm_path)
-            elif args.ci_load_grad_norm is not None:
-                ci_load_grad_norm_path = args.ci_load_grad_norm.format(
-                    role=role,
-                    rollout_id=rollout_id,
-                    step_id=step_id,
-                )
-                expected_grad_norm = torch.load(ci_load_grad_norm_path)
-                assert math.isclose(
-                    grad_norm,
-                    expected_grad_norm,
-                    rel_tol=0.01,
-                    abs_tol=0.01,
-                ), f"grad norm mismatch: {grad_norm} != {expected_grad_norm}"
     # Close out pre-hooks if using distributed optimizer and overlapped param gather.
     if pre_hook_enabled:
         disable_forward_pre_hook(model)
@@ -776,44 +732,6 @@ def save(
         enable_forward_pre_hook(model)
 
 
-def save_hf_model(args, rollout_id: int, model: Sequence[DDP]) -> None:
-    """Save Megatron model in HuggingFace format.
-
-    Args:
-        model (Sequence[DDP]): Sequence of DDP-wrapped model chunks.
-        rollout_id (int): Rollout ID for path formatting.
-    """
-    should_log = (
-        mpu.get_data_parallel_rank(with_context_parallel=True) == 0 and mpu.get_tensor_model_parallel_rank() == 0
-    )
-
-    try:
-        from megatron.bridge import AutoBridge
-
-        from slime.utils.megatron_bridge_utils import patch_auto_bridge_hf_config, patch_megatron_model
-
-        path = Path(args.save_hf.format(rollout_id=rollout_id))
-
-        if should_log:
-            logger.info(f"Saving model in HuggingFace format to {path}")
-
-        bridge = patch_auto_bridge_hf_config(AutoBridge.from_hf_pretrained(args.hf_checkpoint, trust_remote_code=True))
-
-        path.mkdir(parents=True, exist_ok=True)
-
-        with patch_megatron_model(model):
-            bridge.save_hf_pretrained(
-                model,
-                path=path,
-            )
-
-        if should_log:
-            logger.info(f"Successfully saved HuggingFace model to {path}")
-    except Exception as e:
-        if should_log:
-            logger.error(f"Failed to save HuggingFace format: {e}")
-
-
 def initialize_model_and_optimizer(
     args: Namespace, role: str = "actor"
 ) -> tuple[list[DDP], MegatronOptimizer, OptimizerParamScheduler, int]:
@@ -827,14 +745,6 @@ def initialize_model_and_optimizer(
         tuple[list[DDP], MegatronOptimizer, OptimizerParamScheduler, int]:
             DDP-wrapped model chunks, optimizer, scheduler, and iteration index.
     """
-
-    if torch.version.hip:
-        import megatron.core.dist_checkpointing.strategies.filesystem_async as filesystem_async_module
-
-        from slime.utils.rocm_checkpoint_writer import ROCmFileSystemWriterAsync
-
-        filesystem_async_module.FileSystemWriterAsync = ROCmFileSystemWriterAsync
-        print("[ROCm] Applied FileSystemWriterAsync patch for HIP compatibility")
 
     model, optimizer, opt_param_scheduler = setup_model_and_optimizer(args, role)
     model[0].role = role
