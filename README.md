@@ -41,20 +41,6 @@ Obtain the teacher and student checkpoints listed below and download the dataset
 | Mathematics evaluation | HMMT February 2025 | [MathArena/hmmt_feb_2025](https://huggingface.co/datasets/MathArena/hmmt_feb_2025) |
 | Mathematics evaluation | HMMT February 2026 | [MathArena/hmmt_feb_2026](https://huggingface.co/datasets/MathArena/hmmt_feb_2026) |
 
-Training reads JSONL or Parquet with a `prompt` field containing text or a chat-message list; map RaR-Medicine's `question` field to `prompt`. Distillation uses the questions, without reference answers or rubrics. For DAPO, use the deduplicated 17k prompt pool: the original public release contains repeated rows.
-
-```bash
-cp .env.example .env
-```
-
-Set model/data paths and hardware resources in `.env`. Experiment settings are in `configs/`.
-
-Prepare the student checkpoint for the selected profile:
-
-```bash
-python scripts/prepare_checkpoint.py --profile math_qwen3 --gpus 0 --execute
-```
-
 ## Main experiments
 
 | Profile | Teacher → student | Data | Rollouts |
