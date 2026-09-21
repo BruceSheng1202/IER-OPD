@@ -1,12 +1,19 @@
-# IER for On-Policy Distillation
-<img width="2172" height="724" alt="image" src="https://github.com/user-attachments/assets/42eee8de-307c-40ea-9921-cf56581d82cc" />
+<h1 align="center">IER for On-Policy Distillation</h1>
 
-Reproduction code for **1% of Tokens Can Be Enough: On Gradient Estimation in On-Policy Distillation**.
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/42eee8de-307c-40ea-9921-cf56581d82cc" width="480" alt="Ant Group and MBZUAI" />
+</p>
+
+<p align="center">
+  Reproduction code for<br />
+  <strong>1% of Tokens Can Be Enough: On Gradient Estimation in On-Policy Distillation</strong>
+</p>
 
 IER selects response tokens for the sampled reverse-KL training loss. Student responses are generated in full. The codebase is built upon [slime](https://github.com/THUDM/slime) and [TA-OPD](https://github.com/wyy-code/TA-OPD).
 
-<img width="1058" height="698" alt="image" src="https://github.com/user-attachments/assets/3a5fa393-49be-4602-b2ab-1145c3981a30" />
-
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/3a5fa393-49be-4602-b2ab-1145c3981a30" width="680" alt="Mathematics results at a 0.1% token budget" />
+</p>
 
 ## Layout
 
