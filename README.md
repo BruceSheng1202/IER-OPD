@@ -1,4 +1,5 @@
 # IER for On-Policy Distillation
+<img width="2172" height="724" alt="image" src="https://github.com/user-attachments/assets/42eee8de-307c-40ea-9921-cf56581d82cc" />
 
 Reproduction code for **1% of Tokens Can Be Enough: On Gradient Estimation in On-Policy Distillation**.
 
