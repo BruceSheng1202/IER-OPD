@@ -1,0 +1,19 @@
+{
+  "name": "medical_qwen3",
+  "paper_pages": [
+    5,
+    17
+  ],
+  "task": "medical",
+  "teacher": "ClinAlign-4B",
+  "student": "Qwen3-4B",
+  "teacher_path_key": "MEDICAL_TEACHER",
+  "student_path_key": "MEDICAL_STUDENT_HF",
+  "checkpoint_path_key": "MEDICAL_STUDENT_CHECKPOINT",
+  "data_path_key": "MEDICAL_PROMPT_DATA",
+  "model_config": "qwen3-4B.json",
+  "num_rollout": 100,
+  "chat_template_kwargs": {
+    "enable_thinking": false
+  }
+}

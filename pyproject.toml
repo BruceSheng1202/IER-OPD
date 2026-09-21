@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ier-opd"
+version = "0.1.0"
+description = "Information-efficiency ratio for sparse on-policy distillation"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = ["numpy>=1.26,<2", "pyyaml", "psutil"]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<9", "sympy", "pylatexenc", "httpx"]
+math = ["httpx", "transformers==4.57.1", "sympy", "pylatexenc"]
+analysis = ["pandas", "pyarrow"]
+
+[tool.setuptools]
+license-files = ["third_party/slime-LICENSE", "THIRD_PARTY_NOTICES.md"]
+
+[tool.setuptools.packages.find]
+include = ["slime*", "slime_plugins*"]
+
+[tool.setuptools.package-data]
+"slime.rollout.rm_hub" = ["*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"

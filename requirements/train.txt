@@ -1,0 +1,27 @@
+# Training dependencies; source revisions: third_party/UPSTREAM.json.
+torch==2.9.1
+sglang==0.5.9
+ray[default]==2.54.0
+transformers==4.57.1
+uvloop==0.22.1
+numpy>=1.26,<2
+accelerate
+aiohttp
+blobfile
+datasets
+httpx[http2]
+numba
+omegaconf
+pandas
+pillow
+psutil
+pyarrow
+pylatexenc
+pyyaml
+safetensors
+sglang-router==0.3.2
+sympy
+tensorboard
+tqdm
+typing_extensions
+wandb

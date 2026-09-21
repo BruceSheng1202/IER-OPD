@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "description": "Paper main-experiment configuration. Generated runs are new reproductions, not archived experiment records.",
+  "paper_pages": [
+    5,
+    6,
+    8,
+    17
+  ],
+  "training": {
+    "rollout_batch_size": 4,
+    "n_samples_per_prompt": 16,
+    "num_steps_per_rollout": 8,
+    "global_batch_size": 8,
+    "temperature": 1.0,
+    "top_p": 1.0,
+    "max_prompt_tokens": 2048,
+    "max_response_tokens": 8192,
+    "max_context_tokens": 16384,
+    "optimizer": "adam",
+    "lr": 1e-06,
+    "weight_decay": 0.1,
+    "adam_beta1": 0.9,
+    "adam_beta2": 0.98
+  },
+  "selection": {
+    "budgets": [
+      0.001,
+      0.01,
+      0.1
+    ],
+    "bases": [
+      "prefix",
+      "entropy",
+      "tip",
+      "ta_opd",
+      "ca_softor"
+    ],
+    "fusion": [
+      "none",
+      "ier_or",
+      "ier_and"
+    ],
+    "standalone": [
+      "ier"
+    ],
+    "math_extra_methods": [
+      "random",
+      "sampled_rkl_max"
+    ],
+    "full_method": "full",
+    "min_keep_per_sample": 1,
+    "top_k": 16,
+    "missing_log_probability": -12,
+    "epsilon": 1e-08
+  },
+  "implementation_defaults": {
+    "precision": "bfloat16",
+    "seed": 1234,
+    "rollout_seed": 42,
+    "selector_seed": 42,
+    "lr_decay_style": "constant",
+    "metric_normalization": "batch_quantile",
+    "normalization_q_low": 0.05,
+    "normalization_q_high": 0.95,
+    "compat_proxy": "mass",
+    "opd_kl_coef": 1.0,
+    "advantage_estimator": "grpo",
+    "eps_clip": 0.2,
+    "eps_clip_high": 0.28,
+    "update_weights_interval": 1,
+    "note": "Explicit implementation defaults retained from the existing implementation; these values are not claimed to be separately specified by the manuscript."
+  }
+}

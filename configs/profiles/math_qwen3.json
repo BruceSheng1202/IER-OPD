@@ -1,0 +1,19 @@
+{
+  "name": "math_qwen3",
+  "paper_pages": [
+    5,
+    17
+  ],
+  "task": "math",
+  "teacher": "JustRL-Qwen3-4B",
+  "student": "Qwen3-1.7B",
+  "teacher_path_key": "MATH_QWEN_TEACHER",
+  "student_path_key": "MATH_QWEN_STUDENT_HF",
+  "checkpoint_path_key": "MATH_QWEN_STUDENT_CHECKPOINT",
+  "data_path_key": "MATH_PROMPT_DATA",
+  "model_config": "qwen3-1.7B.json",
+  "num_rollout": 50,
+  "chat_template_kwargs": {
+    "enable_thinking": false
+  }
+}

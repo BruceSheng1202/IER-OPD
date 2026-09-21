@@ -1,0 +1,38 @@
+{
+  "runtime": {
+    "project": "THUDM/slime",
+    "source": "https://github.com/THUDM/slime"
+  },
+  "observed_training_environment": {
+    "python": "3.12",
+    "pytorch": "2.9.1+cu129",
+    "sglang": "0.5.9",
+    "ray": "2.54.0",
+    "transformers": "4.57.1",
+    "uvloop": "0.22.1"
+  },
+  "source_install_recipe": {
+    "sglang": {
+      "repository": "https://github.com/sgl-project/sglang",
+      "revision": "bbe9c7eeb520b0a67e92d133dfc137a3688dc7f2"
+    },
+    "megatron_lm": {
+      "repository": "https://github.com/NVIDIA/Megatron-LM",
+      "revision": "3714d81d418c9f1bca4594fc35f9e8289f652862"
+    },
+    "mbridge": {
+      "repository": "https://github.com/ISEEKYAN/mbridge",
+      "revision": "89eb10887887bc74853f89a4de258c0702932a1c"
+    },
+    "apex": {
+      "repository": "https://github.com/NVIDIA/apex",
+      "revision": "10417aceddd7d5d05d7cbf7b0fc2daad1105f8b4"
+    },
+    "torch_memory_saver": {
+      "repository": "https://github.com/fzyzcjy/torch_memory_saver",
+      "revision": "dc6876905830430b5054325fa4211ff302169c6b"
+    },
+    "flash_attention": "2.7.4.post1",
+    "transformer_engine": "2.10.0"
+  }
+}

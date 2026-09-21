@@ -1,0 +1,22 @@
+{
+  "thinking": "off",
+  "seed": null,
+  "concurrency": 64,
+  "sampling": {
+    "n_samples_per_prompt": 32,
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "top_k": -1,
+    "max_new_tokens": 32768
+  },
+  "server": {
+    "tensor_parallel_size": 1,
+    "mem_fraction_static": 0.75
+  },
+  "datasets": [
+    {"name": "AIME25", "path": "AIME25.jsonl"},
+    {"name": "AIME2026", "path": "AIME2026.jsonl"},
+    {"name": "HMMT2025", "path": "HMMT2025.jsonl"},
+    {"name": "HMMT2026", "path": "HMMT2026.jsonl"}
+  ]
+}

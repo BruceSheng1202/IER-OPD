@@ -1,0 +1,181 @@
+diff --git a/python/sglang/srt/entrypoints/http_server.py b/python/sglang/srt/entrypoints/http_server.py
+index 1d6816c01043..803daa6348cb 100644
+--- a/python/sglang/srt/entrypoints/http_server.py
++++ b/python/sglang/srt/entrypoints/http_server.py
+@@ -574,10 +574,8 @@
+ @app.get("/weight_version")
+ async def weight_version():
+     """Get the current weight version."""
+-    raise HTTPException(
+-        status_code=404,
+-        detail="Endpoint '/get_weight_version' or '/weight_version' is deprecated. Please use '/model_info' instead.",
+-    )
++    result = await model_info()
++    return {"weight_version": result.get("weight_version", None)}
+ 
+ 
+ @app.get("/get_server_info")
+@@ -594,9 +592,19 @@
+ async def server_info():
+     """Get the server information."""
+     # Returns internal states per DP.
+-    internal_states: List[Dict[Any, Any]] = (
+-        await _global_state.tokenizer_manager.get_internal_state()
+-    )
++    # In large/disaggregated deployments this can occasionally block; keep endpoint responsive.
++    server_info_timeout = float(os.environ.get("SGLANG_SERVER_INFO_TIMEOUT", "2"))
++    try:
++        internal_states: List[Dict[Any, Any]] = await asyncio.wait_for(
++            _global_state.tokenizer_manager.get_internal_state(),
++            timeout=server_info_timeout,
++        )
++    except asyncio.TimeoutError:
++        logger.warning(
++            "Timed out getting internal state for /server_info after %.1fs; returning empty internal_states",
++            server_info_timeout,
++        )
++        internal_states = []
+ 
+     # This field is not serializable.
+     if hasattr(_global_state.tokenizer_manager.server_args, "model_config"):
+diff --git a/python/sglang/srt/managers/scheduler_output_processor_mixin.py b/python/sglang/srt/managers/scheduler_output_processor_mixin.py
+index 482bc6ca667b..857cfa6a3ee0 100644
+--- a/python/sglang/srt/managers/scheduler_output_processor_mixin.py
++++ b/python/sglang/srt/managers/scheduler_output_processor_mixin.py
+@@ -1134,7 +1134,7 @@
+                 req.log_time_stats()
+ 
+         # Send to detokenizer
+-        if reqs or is_idle_batch:
++        if rids or is_idle_batch:
+             if self.model_config.is_multimodal_gen:
+                 return
+             self.send_to_detokenizer.send_output(
+diff --git a/python/sglang/srt/managers/tokenizer_manager.py b/python/sglang/srt/managers/tokenizer_manager.py
+index 0914a5230b24..75b29b754d88 100644
+--- a/python/sglang/srt/managers/tokenizer_manager.py
++++ b/python/sglang/srt/managers/tokenizer_manager.py
+@@ -1327,7 +1327,7 @@
+         async with self.is_pause_cond:
+             self.is_pause = True
+             if obj.mode != "abort":
+-                await self.send_to_scheduler.send_pyobj(obj)
++                self.send_to_scheduler.send_pyobj(obj)
+             else:
+                 # we are using the model_update_lock to check if there is still on-going requests.
+                 while True:
+@@ -1341,7 +1341,7 @@
+     async def continue_generation(self, obj: ContinueGenerationReqInput):
+         async with self.is_pause_cond:
+             self.is_pause = False
+-            await self.send_to_scheduler.send_pyobj(obj)
++            self.send_to_scheduler.send_pyobj(obj)
+             self.is_pause_cond.notify_all()
+ 
+     async def update_weights_from_disk(
+@@ -1955,19 +1955,17 @@
+             if custom_labels
+             else self.metrics_collector.labels
+         )
+-        if (
+-            state.first_token_time == 0.0
+-            and self.disaggregation_mode != DisaggregationMode.PREFILL
+-        ):
++        if state.first_token_time == 0.0:
+             state.first_token_time = state.last_time = time.time()
+             state.first_token_time_perf = time.perf_counter()
+             state.last_completion_tokens = completion_tokens
+-            self.metrics_collector.observe_time_to_first_token(
+-                labels, state.first_token_time - state.created_time
+-            )
++            if self.disaggregation_mode != DisaggregationMode.PREFILL:
++                self.metrics_collector.observe_time_to_first_token(
++                    labels, state.first_token_time - state.created_time
++                )
+         else:
+             num_new_tokens = completion_tokens - state.last_completion_tokens
+-            if num_new_tokens:
++            if num_new_tokens > 0:
+                 new_time = time.time()
+                 interval = new_time - state.last_time
+                 self.metrics_collector.observe_inter_token_latency(
+@@ -1976,7 +1974,7 @@
+                     num_new_tokens,
+                 )
+                 state.last_time = new_time
+-                state.last_completion_tokens = completion_tokens
++            state.last_completion_tokens = completion_tokens
+ 
+         if state.finished:
+             retraction_count = (
+diff --git a/python/sglang/srt/mem_cache/allocator.py b/python/sglang/srt/mem_cache/allocator.py
+index fa08bb66a4e0..22c1c2a1279f 100644
+--- a/python/sglang/srt/mem_cache/allocator.py
++++ b/python/sglang/srt/mem_cache/allocator.py
+@@ -411,7 +411,7 @@
+ 
+         self.seen_max_num_extend_tokens_next_power_of_2 = max(
+             self.seen_max_num_extend_tokens_next_power_of_2,
+-            min(tl.core.TRITON_MAX_TENSOR_NUMEL, next_power_of_2(extend_num_tokens)),
++            min(65536, next_power_of_2(extend_num_tokens)),
+         )
+ 
+         bs = len(prefix_lens)
+@@ -424,7 +424,7 @@
+             (extend_num_tokens,), dtype=torch.int64, device=self.device
+         )
+ 
+-        if extend_num_tokens < tl.core.TRITON_MAX_TENSOR_NUMEL:
++        if extend_num_tokens < 65536:
+             alloc_extend_kernel[(bs,)](
+                 prefix_lens,
+                 seq_lens,
+diff --git a/python/sglang/srt/mem_cache/radix_cache.py b/python/sglang/srt/mem_cache/radix_cache.py
+index 42b169728ad5..8e799196a488 100644
+--- a/python/sglang/srt/mem_cache/radix_cache.py
++++ b/python/sglang/srt/mem_cache/radix_cache.py
+@@ -495,7 +495,17 @@
+         if self.disable:
+             return
+ 
+-        token_ids = req.fill_ids
++        # Limit to kv_committed_len to avoid including tokens (e.g., the just-generated
++        # token in disagg prefill) that don't have computed KV yet. If fill_ids is longer
++        # than kv_committed_len, the extra tokens would produce stale values (0 from
++        # req_to_token_pool initialization), leading to spurious tree nodes and memory
++        # leak when page-aligned token counts happen to cross a page boundary.
++        kv_committed_len = req.kv_committed_len
++        token_ids = (
++            req.fill_ids[:kv_committed_len]
++            if kv_committed_len < len(req.fill_ids)
++            else req.fill_ids
++        )
+         kv_indices = self.req_to_token_pool.req_to_token[
+             req.req_pool_idx, : len(token_ids)
+         ]
+@@ -619,9 +629,8 @@
+             node.lock_ref -= 1
+             self._update_leaf_status(node)
+             if node.parent is None:
+-                assert (
+-                    node is self.root_node
+-                ), f"This request holds the node from another tree"
++                # Node belongs to a stale (flushed) tree — stop traversal gracefully.
++                break
+             node = node.parent
+         return delta
+ 
+diff --git a/python/sglang/srt/utils/weight_checker.py b/python/sglang/srt/utils/weight_checker.py
+index 3be16446e0b5..1b2371c83901 100644
+--- a/python/sglang/srt/utils/weight_checker.py
++++ b/python/sglang/srt/utils/weight_checker.py
+@@ -69,6 +69,9 @@
+         actual_should_compare,
+         actual,
+     ) in zip(expect_tensors, actual_tensors, strict=True):
++        if ".cos_sin_cache" in expect_name:
++            # skip cos/sin cache which is deterministic from shape and dtype and may have different shapes due to different implementations.
++            continue
+         assert expect_name == actual_name, f"{expect_name=} {actual_name=}"
+         assert (
+             expect_should_compare == actual_should_compare

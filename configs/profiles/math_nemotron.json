@@ -1,0 +1,17 @@
+{
+  "name": "math_nemotron",
+  "paper_pages": [
+    5,
+    17
+  ],
+  "task": "math",
+  "teacher": "JustRL-Nemotron-1.5B",
+  "student": "OpenMath-Nemotron-1.5B",
+  "teacher_path_key": "NEMOTRON_TEACHER",
+  "student_path_key": "NEMOTRON_STUDENT_HF",
+  "checkpoint_path_key": "NEMOTRON_STUDENT_CHECKPOINT",
+  "data_path_key": "MATH_PROMPT_DATA",
+  "model_config": "openmath-nemotron-1.5B.json",
+  "num_rollout": 50,
+  "chat_template_kwargs": {}
+}
