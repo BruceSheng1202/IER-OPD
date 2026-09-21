@@ -4,6 +4,9 @@ Reproduction code for **1% of Tokens Can Be Enough: On Gradient Estimation in On
 
 IER selects response tokens for the sampled reverse-KL training loss. Student responses are generated in full. The codebase is built upon [slime](https://github.com/THUDM/slime) and [TA-OPD](https://github.com/wyy-code/TA-OPD).
 
+<img width="1058" height="698" alt="image" src="https://github.com/user-attachments/assets/3a5fa393-49be-4602-b2ab-1145c3981a30" />
+
+
 ## Layout
 
 ```text
